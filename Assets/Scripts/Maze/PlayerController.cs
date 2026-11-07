@@ -111,6 +111,13 @@ namespace MazeGame
             }
         }
 
+        private void LateUpdate()
+        {
+            var game = MazeGameManager.Instance;
+            var sprite = GetComponent<SpriteRenderer>();
+            if (sprite != null) sprite.color = game != null && game.IsInvulnerable && Mathf.Sin(Time.time * 24f) > 0 ? new Color(1, 1, 1, 0.35f) : Color.white;
+        }
+
         private void FixedUpdate()
         {
             if (_rb != null)

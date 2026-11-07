@@ -42,6 +42,7 @@ namespace MazeGame
             MainMenu,
             Paused,
             Playing,
+            Failed,
             LevelCompleted
         }
 
@@ -55,6 +56,19 @@ namespace MazeGame
         public int TotalCoins { get; private set; }
         public float ElapsedTime { get; private set; }
 
+        public int Health { get; private set; } = 3;
+        private float _invulnerableUntil;
+        public bool IsInvulnerable => Time.time < _invulnerableUntil;
+        public bool TakeDamage()
+        {
+            if (CurrentState != GameState.Playing || IsInvulnerable) return false;
+            Health--;
+            _invulnerableUntil = Time.time + 1.5f;
+            _notice = "受伤了！利用冲刺拉开距离";
+            _noticeUntil = Time.unscaledTime + 2f;
+            if (Health <= 0) { CurrentState = GameState.Failed; Time.timeScale = 0f; }
+            return true;
+        }
         public bool HasKey { get; private set; }
         private SpriteRenderer _exitRenderer;
         private string _notice = "";
@@ -126,6 +140,8 @@ namespace MazeGame
         {
             Time.timeScale = 1f;
             HasKey = false;
+            Health = 3;
+            _invulnerableUntil = 0;
             _notice = "";
             currentLevel = Mathf.Clamp(level, 1, 5);
             CoinsCollected = 0;
@@ -312,6 +328,23 @@ namespace MazeGame
             fog.transform.SetParent(_mazeRoot.transform);
             fog.AddComponent<ExplorationFog>().Initialize(_generator.Width, _generator.Height, _player.transform);
 
+            // Introduce patrols only after the two introductory levels.
+            if (currentLevel >= 3)
+            {
+                var candidates = new List<Vector2Int>();
+                for (int x = 1; x < _generator.Width - 1; x++)
+                    for (int y = 1; y < _generator.Height - 1; y++)
+                        if (_generator.Grid[x, y] == CellType.Floor && x + y >= 12 && (x != keyPos.x || y != keyPos.y)) candidates.Add(new Vector2Int(x, y));
+                for (int i = 0; i < currentLevel - 2 && candidates.Count > 0; i++)
+                {
+                    int index = Random.Range(0, candidates.Count);
+                    var cell = candidates[index]; candidates.RemoveAt(index);
+                    var enemy = new GameObject("Patrol_" + i);
+                    enemy.transform.SetParent(_mazeRoot.transform);
+                    enemy.AddComponent<MazeEnemy>().Initialize(_generator, _player.transform, cell);
+                }
+            }
+
             // 5. Setup Camera Follow
             Camera mainCam = Camera.main;
             if (mainCam != null)
@@ -402,9 +435,10 @@ namespace MazeGame
             float width = Screen.width / scale, height = Screen.height / scale;
             if (CurrentState != GameState.MainMenu)
             {
-                GUILayout.BeginArea(new Rect(20, 20, 350, 220), _cardStyle);
+                GUILayout.BeginArea(new Rect(20, 20, 350, 250), _cardStyle);
                 GUILayout.Label($"迷宫探险  /  第 {currentLevel} 关", _headerStyle);
                 GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
+                GUILayout.Label($"生命  {Health} / 3" + (currentLevel >= 3 ? "    小心巡逻怪" : "    安全探索"), _labelStyle);
                 GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
                 GUILayout.Label("WASD / 方向键移动 · R 重新生成", _labelStyle);
                 var controller = _player != null ? _player.GetComponent<PlayerController>() : null;
@@ -421,7 +455,7 @@ namespace MazeGame
                 GUI.color = Color.white;
                 GUILayout.BeginArea(new Rect((width - 440) / 2, (height - 360) / 2, 440, 360), _cardStyle);
                 GUILayout.Space(16);
-                string title = CurrentState == GameState.MainMenu ? "迷宫探险" : CurrentState == GameState.Paused ? "休息一下" : "成功逃出迷宫";
+                string title = CurrentState == GameState.MainMenu ? "迷宫探险" : CurrentState == GameState.Paused ? "休息一下" : CurrentState == GameState.Failed ? "这次没能逃出去" : "成功逃出迷宫";
                 GUILayout.Label(title, _winTitleStyle);
                 GUILayout.Space(20);
                 if (CurrentState == GameState.MainMenu)
@@ -438,6 +472,13 @@ namespace MazeGame
                     GUILayout.Space(10);
                     if (GUILayout.Button("重新生成本关", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
                 }
+                else if (CurrentState == GameState.Failed)
+                {
+                    GUILayout.Label("注意红色巡逻怪，冲刺可以帮助脱险。", _labelStyle);
+                    GUILayout.Label("受伤后有 1.5 秒保护时间。", _labelStyle);
+                    GUILayout.Space(20);
+                    if (GUILayout.Button("重新挑战", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
+                }
                 else
                 {
                     GUILayout.Label($"用时 {ElapsedTime:F1} 秒    金币 {CoinsCollected} / {TotalCoins}", _labelStyle);
@@ -452,6 +493,15 @@ namespace MazeGame
                     if (GUILayout.Button("返回首页", _btnStyle, GUILayout.Height(40))) ShowMainMenu();
                 }
                 GUILayout.EndArea();
+            }
+            if (IsInvulnerable && CurrentState == GameState.Playing)
+            {
+                GUI.color = new Color(1, 0.12f, 0.1f, 0.12f);
+                GUI.DrawTexture(new Rect(0, 0, width, 8), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, height - 8, width, 8), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(0, 0, 8, height), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(width - 8, 0, 8, height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
             }
             GUI.matrix = previous;
         }
