@@ -69,6 +69,13 @@ namespace MazeGame
             if (Health <= 0) { CurrentState = GameState.Failed; Time.timeScale = 0f; }
             return true;
         }
+        public int SelectedCharacter { get; private set; }
+        public void SelectCharacter(int index)
+        {
+            SelectedCharacter = Mathf.Clamp(index, 0, 3);
+            PlayerPrefs.SetInt("Maze.Character", SelectedCharacter);
+            if (_player != null) _player.GetComponentInChildren<CharacterVisual>().Select(SelectedCharacter);
+        }
         public bool HasKey { get; private set; }
         private SpriteRenderer _exitRenderer;
         private string _notice = "";
@@ -91,6 +98,7 @@ namespace MazeGame
                 return;
             }
             Instance = this;
+            SelectedCharacter = Mathf.Clamp(PlayerPrefs.GetInt("Maze.Character", 0), 0, 3);
 
             // Ensure SoundEffects is present
             if (FindFirstObjectByType<SoundEffects>() == null)
@@ -143,6 +151,7 @@ namespace MazeGame
             Health = 3;
             _invulnerableUntil = 0;
             _notice = "";
+            _noticeUntil = 0;
             currentLevel = Mathf.Clamp(level, 1, 5);
             CoinsCollected = 0;
             ElapsedTime = 0f;
@@ -196,8 +205,6 @@ namespace MazeGame
             _generator = new MazeGenerator(width, height);
             _generator.Generate();
 
-            Sprite wallSprite = SpriteFactory.GetWallSprite();
-            Sprite floorSprite = SpriteFactory.GetFloorSprite();
             Sprite coinSprite = SpriteFactory.GetCoinSprite();
             Sprite exitSprite = SpriteFactory.GetExitSprite();
 
@@ -216,7 +223,12 @@ namespace MazeGame
                         wall.transform.position = pos;
 
                         SpriteRenderer sr = wall.AddComponent<SpriteRenderer>();
-                        sr.sprite = wallSprite;
+                        int mask = 0;
+                        if (y > 0 && _generator.Grid[x,y-1] != CellType.Wall) mask |= 1;
+                        if (y < _generator.Height-1 && _generator.Grid[x,y+1] != CellType.Wall) mask |= 2;
+                        if (x > 0 && _generator.Grid[x-1,y] != CellType.Wall) mask |= 4;
+                        if (x < _generator.Width-1 && _generator.Grid[x+1,y] != CellType.Wall) mask |= 8;
+                        sr.sprite = DungeonArt.Wall(currentLevel, mask, (x*7+y*3)%3);
                         sr.sortingOrder = 0;
 
                         BoxCollider2D bc = wall.AddComponent<BoxCollider2D>();
@@ -229,11 +241,13 @@ namespace MazeGame
                         floor.transform.position = pos;
 
                         SpriteRenderer sr = floor.AddComponent<SpriteRenderer>();
-                        sr.sprite = floorSprite;
+                        sr.sprite = DungeonArt.Floor(currentLevel, (x*7+y*11)%4);
                         sr.sortingOrder = -2;
                     }
                 }
             }
+
+            DungeonArt.Decorate(_mazeRoot.transform, _generator, currentLevel);
 
             // 2. Build Coins
             TotalCoins = _generator.CoinPositions.Count;
@@ -304,7 +318,10 @@ namespace MazeGame
                 _player.transform.position = startPos;
 
                 SpriteRenderer playerSr = _player.AddComponent<SpriteRenderer>();
-                playerSr.sprite = SpriteFactory.GetPlayerSprite();
+                playerSr.enabled = false;
+                var visual = new GameObject("CharacterVisual");
+                visual.transform.SetParent(_player.transform, false);
+                visual.AddComponent<CharacterVisual>().Select(SelectedCharacter);
                 playerSr.sortingOrder = 5;
 
                 _player.AddComponent<Rigidbody2D>();
@@ -350,14 +367,15 @@ namespace MazeGame
             if (mainCam != null)
             {
                 mainCam.backgroundColor = new Color(0.02f, 0.03f, 0.06f);
+                mainCam.orthographicSize = 4.5f;
                 CameraFollow follow = mainCam.GetComponent<CameraFollow>();
                 if (follow == null)
                 {
                     follow = mainCam.gameObject.AddComponent<CameraFollow>();
                 }
                 follow.target = _player.transform;
-                follow.SetBounds(0, 0, _generator.Width, _generator.Height);
-                mainCam.transform.position = new Vector3(startPos.x, startPos.y, -10f);
+                follow.SetBounds(-0.5f, -0.5f, _generator.Width - 0.5f, _generator.Height - 0.5f);
+                follow.SnapToTarget();
             }
         }
 
@@ -436,7 +454,7 @@ namespace MazeGame
             if (CurrentState != GameState.MainMenu)
             {
                 GUILayout.BeginArea(new Rect(20, 20, 350, 250), _cardStyle);
-                GUILayout.Label($"迷宫探险  /  第 {currentLevel} 关", _headerStyle);
+                GUILayout.Label($"第 {currentLevel} 关 · {DungeonArt.Names[currentLevel - 1]}", _headerStyle);
                 GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
                 GUILayout.Label($"生命  {Health} / 3" + (currentLevel >= 3 ? "    小心巡逻怪" : "    安全探索"), _labelStyle);
                 GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
@@ -453,14 +471,37 @@ namespace MazeGame
                 GUI.color = new Color(0, 0, 0, 0.65f);
                 GUI.DrawTexture(new Rect(0, 0, width, height), Texture2D.whiteTexture);
                 GUI.color = Color.white;
-                GUILayout.BeginArea(new Rect((width - 440) / 2, (height - 360) / 2, 440, 360), _cardStyle);
+                float panelWidth = CurrentState == GameState.MainMenu ? 760 : 440;
+                float panelHeight = CurrentState == GameState.MainMenu ? 480 : 360;
+                GUILayout.BeginArea(new Rect((width - panelWidth) / 2, (height - panelHeight) / 2, panelWidth, panelHeight), _cardStyle);
                 GUILayout.Space(16);
                 string title = CurrentState == GameState.MainMenu ? "迷宫探险" : CurrentState == GameState.Paused ? "休息一下" : CurrentState == GameState.Failed ? "这次没能逃出去" : "成功逃出迷宫";
                 GUILayout.Label(title, _winTitleStyle);
                 GUILayout.Space(20);
                 if (CurrentState == GameState.MainMenu)
                 {
-                    GUILayout.Label("拨开迷雾，探索岔路，收集金币。", _labelStyle);
+                    GUILayout.Label("选择你的探险伙伴 · 四位角色能力相同", _labelStyle);
+                    GUILayout.BeginHorizontal();
+                    for (int i = 0; i < 4; i++)
+                    {
+                        GUILayout.BeginVertical(GUILayout.Width(174));
+                        Rect portrait = GUILayoutUtility.GetRect(160, 150);
+                        var sprite = CharacterVisual.GetSprite(i, 0);
+                        if (sprite != null)
+                        {
+                            Rect uv = sprite.rect;
+                            uv.x /= sprite.texture.width; uv.width /= sprite.texture.width;
+                            uv.y /= sprite.texture.height; uv.height /= sprite.texture.height;
+                            float portraitWidth = 140 * sprite.rect.width / sprite.rect.height;
+                            GUI.DrawTextureWithTexCoords(new Rect(portrait.center.x - portraitWidth / 2, portrait.y, portraitWidth, 140), sprite.texture, uv);
+                        }
+                        GUI.backgroundColor = i == SelectedCharacter ? new Color(0.4f, 1, 0.7f) : Color.white;
+                        if (GUILayout.Button((i == SelectedCharacter ? "已选 · " : "") + CharacterVisual.Names[i], GUILayout.Height(34))) SelectCharacter(i);
+                        GUI.backgroundColor = Color.white;
+                        GUILayout.EndVertical();
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Space(12);
                     GUILayout.Label("找到金色钥匙，让出口重新亮起。", _labelStyle);
                     GUILayout.Label("WASD 移动 · 空格冲刺 · Esc 暂停", _labelStyle);
                     GUILayout.Space(20);

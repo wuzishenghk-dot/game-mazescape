@@ -33,8 +33,7 @@ namespace MazeGame
         }
         private Rigidbody2D _rb;
         private Vector2 _moveInput;
-        private Transform _visualTransform;
-        private float _bobTimer;
+
 
         public void Initialize()
         {
@@ -52,7 +51,7 @@ namespace MazeGame
                 col.radius = 0.35f;
             }
 
-            _visualTransform = transform;
+
         }
 
         private void Awake()
@@ -94,28 +93,8 @@ namespace MazeGame
 #else
             if (Input.GetKeyDown(KeyCode.Space)) TryDash(_moveInput);
 #endif
-            // Visual breathing / walking bob
-            if (_moveInput.sqrMagnitude > 0.01f)
-            {
-                _bobTimer += Time.deltaTime * 12f;
-                float scale = 1f + Mathf.Sin(_bobTimer) * 0.06f;
-                _visualTransform.localScale = new Vector3(scale, scale, 1f);
-
-                // Rotate slightly toward movement direction
-                float targetAngle = Mathf.Atan2(_moveInput.y, _moveInput.x) * Mathf.Rad2Deg - 90f;
-                _visualTransform.rotation = Quaternion.Euler(0, 0, targetAngle);
-            }
-            else
-            {
-                _visualTransform.localScale = Vector3.Lerp(_visualTransform.localScale, Vector3.one, Time.deltaTime * 10f);
-            }
-        }
-
-        private void LateUpdate()
-        {
-            var game = MazeGameManager.Instance;
-            var sprite = GetComponent<SpriteRenderer>();
-            if (sprite != null) sprite.color = game != null && game.IsInvulnerable && Mathf.Sin(Time.time * 24f) > 0 ? new Color(1, 1, 1, 0.35f) : Color.white;
+            var visual = GetComponentInChildren<CharacterVisual>();
+            if (visual != null) visual.Animate(IsDashing ? _dashDirection : _moveInput, IsDashing);
         }
 
         private void FixedUpdate()
