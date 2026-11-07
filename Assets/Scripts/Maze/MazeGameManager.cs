@@ -307,10 +307,16 @@ namespace MazeGame
                 }
             }
 
+            _player.GetComponent<PlayerController>().ResetMovement();
+            GameObject fog = new GameObject("ExplorationFog");
+            fog.transform.SetParent(_mazeRoot.transform);
+            fog.AddComponent<ExplorationFog>().Initialize(_generator.Width, _generator.Height, _player.transform);
+
             // 5. Setup Camera Follow
             Camera mainCam = Camera.main;
             if (mainCam != null)
             {
+                mainCam.backgroundColor = new Color(0.02f, 0.03f, 0.06f);
                 CameraFollow follow = mainCam.GetComponent<CameraFollow>();
                 if (follow == null)
                 {
@@ -396,11 +402,13 @@ namespace MazeGame
             float width = Screen.width / scale, height = Screen.height / scale;
             if (CurrentState != GameState.MainMenu)
             {
-                GUILayout.BeginArea(new Rect(20, 20, 320, 190), _cardStyle);
+                GUILayout.BeginArea(new Rect(20, 20, 350, 220), _cardStyle);
                 GUILayout.Label($"迷宫探险  /  第 {currentLevel} 关", _headerStyle);
                 GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
                 GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
                 GUILayout.Label("WASD / 方向键移动 · R 重新生成", _labelStyle);
+                var controller = _player != null ? _player.GetComponent<PlayerController>() : null;
+                GUILayout.Label(controller != null && controller.DashCooldownRemaining > 0 ? $"冲刺冷却  {controller.DashCooldownRemaining:F1} 秒" : "空格冲刺 · 已就绪", _labelStyle);
                 if (GUILayout.Button("暂停 / 继续 · Esc", _btnStyle, GUILayout.Height(34))) TogglePause();
                 GUILayout.EndArea();
             }
@@ -418,9 +426,9 @@ namespace MazeGame
                 GUILayout.Space(20);
                 if (CurrentState == GameState.MainMenu)
                 {
-                    GUILayout.Label("探索岔路，收集金币。", _labelStyle);
+                    GUILayout.Label("拨开迷雾，探索岔路，收集金币。", _labelStyle);
                     GUILayout.Label("找到金色钥匙，让出口重新亮起。", _labelStyle);
-                    GUILayout.Label("WASD / 方向键移动，Esc 暂停", _labelStyle);
+                    GUILayout.Label("WASD 移动 · 空格冲刺 · Esc 暂停", _labelStyle);
                     GUILayout.Space(20);
                     if (GUILayout.Button("开始探险", _btnStyle, GUILayout.Height(48))) StartLevel(1);
                 }

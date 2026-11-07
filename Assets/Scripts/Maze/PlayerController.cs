@@ -12,6 +12,25 @@ namespace MazeGame
         [Header("Movement")]
         public float moveSpeed = 4.5f;
 
+        public float DashCooldownRemaining { get; private set; }
+        private float _dashRemaining;
+        private Vector2 _dashDirection;
+        public bool IsDashing => _dashRemaining > 0f;
+        public bool TryDash(Vector2 direction)
+        {
+            if (MazeGameManager.Instance == null || MazeGameManager.Instance.CurrentState != MazeGameManager.GameState.Playing || DashCooldownRemaining > 0 || direction.sqrMagnitude < 0.01f) return false;
+            _dashDirection = direction.normalized;
+            _dashRemaining = 0.18f;
+            DashCooldownRemaining = 2.5f;
+            return true;
+        }
+        public void ResetMovement()
+        {
+            _moveInput = Vector2.zero;
+            _dashRemaining = DashCooldownRemaining = 0;
+            if (_rb != null) _rb.linearVelocity = Vector2.zero;
+            transform.localScale = Vector3.one;
+        }
         private Rigidbody2D _rb;
         private Vector2 _moveInput;
         private Transform _visualTransform;
@@ -68,6 +87,13 @@ namespace MazeGame
                 _moveInput.Normalize();
             }
 
+            DashCooldownRemaining = Mathf.Max(0, DashCooldownRemaining - Time.deltaTime);
+            _dashRemaining = Mathf.Max(0, _dashRemaining - Time.deltaTime);
+#if ENABLE_INPUT_SYSTEM
+            if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame) TryDash(_moveInput);
+#else
+            if (Input.GetKeyDown(KeyCode.Space)) TryDash(_moveInput);
+#endif
             // Visual breathing / walking bob
             if (_moveInput.sqrMagnitude > 0.01f)
             {
@@ -89,7 +115,7 @@ namespace MazeGame
         {
             if (_rb != null)
             {
-                _rb.linearVelocity = MazeGameManager.Instance != null && MazeGameManager.Instance.CurrentState == MazeGameManager.GameState.Playing ? _moveInput * moveSpeed : Vector2.zero;
+                _rb.linearVelocity = MazeGameManager.Instance != null && MazeGameManager.Instance.CurrentState == MazeGameManager.GameState.Playing ? (IsDashing ? _dashDirection * moveSpeed * 2.4f : _moveInput * moveSpeed) : Vector2.zero;
             }
         }
 
