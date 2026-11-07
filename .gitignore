@@ -1,0 +1,49 @@
+# Unity generated directories
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Local version control and IDE files
+/.plastic/
+/.vs/
+/.vscode/
+/.idea/
+/.gradle/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.tmp
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Local secrets and operating system files
+.env
+.env.*
+!.env.example
+/.aws/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated packages and crash reports
+*.apk
+*.aab
+*.unitypackage
+sysinfo.txt
+crashlytics-build.properties
