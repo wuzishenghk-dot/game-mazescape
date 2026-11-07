@@ -10,6 +10,26 @@ namespace MazeGame
         private static Sprite _coinSprite;
         private static Sprite _exitSprite;
 
+        private static Sprite _keySprite;
+        public static Sprite GetKeySprite()
+        {
+            if (_keySprite != null) return _keySprite;
+            var tex = new Texture2D(64, 64, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;
+            for (int y = 0; y < 64; y++)
+                for (int x = 0; x < 64; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x, y), new Vector2(22, 42));
+                    bool ring = d < 13 && d > 6;
+                    bool shaft = x >= 19 && x <= 25 && y >= 10 && y <= 33;
+                    bool tooth = x >= 25 && x <= 34 && (y >= 10 && y <= 15 || y >= 21 && y <= 26);
+                    tex.SetPixel(x, y, ring || shaft || tooth ? new Color(1f, 0.8f, 0.2f) : Color.clear);
+                }
+            tex.Apply();
+            _keySprite = Sprite.Create(tex, new Rect(0, 0, 64, 64), new Vector2(0.5f, 0.5f), 64f);
+            return _keySprite;
+        }
+
         public static Sprite GetWallSprite()
         {
             if (_wallSprite == null)

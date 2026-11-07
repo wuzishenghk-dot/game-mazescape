@@ -5,6 +5,7 @@ namespace MazeGame
     public class CollectibleItem : MonoBehaviour
     {
         public bool isExit = false;
+        public bool isKey = false;
         private Vector3 _startPos;
         private float _timeOffset;
 

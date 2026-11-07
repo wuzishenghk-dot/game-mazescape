@@ -44,6 +44,7 @@ namespace MazeGame
         private void Update()
         {
             _moveInput = Vector2.zero;
+            if (MazeGameManager.Instance == null || MazeGameManager.Instance.CurrentState != MazeGameManager.GameState.Playing) return;
 
 #if ENABLE_INPUT_SYSTEM
             if (Keyboard.current != null)
@@ -88,31 +89,22 @@ namespace MazeGame
         {
             if (_rb != null)
             {
-                _rb.linearVelocity = _moveInput * moveSpeed;
+                _rb.linearVelocity = MazeGameManager.Instance != null && MazeGameManager.Instance.CurrentState == MazeGameManager.GameState.Playing ? _moveInput * moveSpeed : Vector2.zero;
             }
         }
 
         private void OnTriggerEnter2D(Collider2D other)
         {
-            if (other.CompareTag("Coin") || other.gameObject.name.StartsWith("Coin_"))
-            {
-                Destroy(other.gameObject);
-                if (MazeGameManager.Instance != null)
-                {
-                    MazeGameManager.Instance.CollectCoin();
-                }
-                if (SoundEffects.Instance != null)
-                {
-                    SoundEffects.Instance.PlayCoinSound();
-                }
-            }
-            else if (other.CompareTag("Finish") || other.gameObject.name == "ExitPortal")
-            {
-                if (MazeGameManager.Instance != null)
-                {
-                    MazeGameManager.Instance.ReachExit();
-                }
-            }
+            var game = MazeGameManager.Instance;
+            if (game == null || game.CurrentState != MazeGameManager.GameState.Playing) return;
+            var item = other.GetComponent<CollectibleItem>();
+            if (item == null || !other.enabled) return;
+            if (item.isExit) { game.ReachExit(); return; }
+            other.enabled = false;
+            if (item.isKey) game.CollectKey();
+            else game.CollectCoin();
+            Destroy(other.gameObject);
+            if (SoundEffects.Instance != null) SoundEffects.Instance.PlayCoinSound();
         }
     }
 }

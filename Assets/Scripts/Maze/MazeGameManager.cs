@@ -39,6 +39,8 @@ namespace MazeGame
 
         public enum GameState
         {
+            MainMenu,
+            Paused,
             Playing,
             LevelCompleted
         }
@@ -48,11 +50,15 @@ namespace MazeGame
         public int baseMazeWidth = 15;
         public int baseMazeHeight = 15;
 
-        public GameState CurrentState { get; private set; } = GameState.Playing;
+        public GameState CurrentState { get; private set; } = GameState.MainMenu;
         public int CoinsCollected { get; private set; }
         public int TotalCoins { get; private set; }
         public float ElapsedTime { get; private set; }
 
+        public bool HasKey { get; private set; }
+        private SpriteRenderer _exitRenderer;
+        private string _notice = "";
+        private float _noticeUntil;
         private GameObject _mazeRoot;
         private GameObject _player;
         private MazeGenerator _generator;
@@ -83,6 +89,7 @@ namespace MazeGame
         private void Start()
         {
             StartLevel(currentLevel);
+            ShowMainMenu();
         }
 
         private void Update()
@@ -93,19 +100,23 @@ namespace MazeGame
             }
 
             bool restartPressed = false;
+            bool pausePressed = false;
 #if ENABLE_INPUT_SYSTEM
+            pausePressed = Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
             if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             {
                 restartPressed = true;
             }
 #else
+            pausePressed = Input.GetKeyDown(KeyCode.Escape);
             if (Input.GetKeyDown(KeyCode.R))
             {
                 restartPressed = true;
             }
 #endif
 
-            if (restartPressed)
+            if (pausePressed) TogglePause();
+            if (restartPressed && CurrentState == GameState.Playing)
             {
                 StartLevel(currentLevel);
             }
@@ -113,14 +124,17 @@ namespace MazeGame
 
         public void StartLevel(int level)
         {
-            currentLevel = level;
+            Time.timeScale = 1f;
+            HasKey = false;
+            _notice = "";
+            currentLevel = Mathf.Clamp(level, 1, 5);
             CoinsCollected = 0;
             ElapsedTime = 0f;
             CurrentState = GameState.Playing;
 
             // Scale maze dimensions with level
-            int w = baseMazeWidth + (level - 1) * 4;
-            int h = baseMazeHeight + (level - 1) * 4;
+            int w = baseMazeWidth + (currentLevel - 1) * 2;
+            int h = baseMazeHeight + (currentLevel - 1) * 2;
 
             BuildMaze(w, h);
         }
@@ -132,14 +146,21 @@ namespace MazeGame
 
         public void CollectCoin()
         {
-            CoinsCollected++;
+            if (CurrentState == GameState.Playing) CoinsCollected++;
         }
 
         public void ReachExit()
         {
             if (CurrentState == GameState.Playing)
             {
+                if (!HasKey)
+                {
+                    _notice = "出口尚未开启，先寻找金色钥匙";
+                    _noticeUntil = Time.unscaledTime + 3f;
+                    return;
+                }
                 CurrentState = GameState.LevelCompleted;
+                Time.timeScale = 0f;
                 if (SoundEffects.Instance != null)
                 {
                     SoundEffects.Instance.PlayWinSound();
@@ -151,6 +172,7 @@ namespace MazeGame
         {
             if (_mazeRoot != null)
             {
+                _mazeRoot.SetActive(false);
                 Destroy(_mazeRoot);
             }
 
@@ -230,6 +252,8 @@ namespace MazeGame
             SpriteRenderer exitSr = exit.AddComponent<SpriteRenderer>();
             exitSr.sprite = exitSprite;
             exitSr.sortingOrder = 1;
+            _exitRenderer = exitSr;
+            exitSr.color = new Color(0.45f, 0.45f, 0.55f);
 
             CircleCollider2D exitCol = exit.AddComponent<CircleCollider2D>();
             exitCol.isTrigger = true;
@@ -237,6 +261,24 @@ namespace MazeGame
 
             CollectibleItem exitAnim = exit.AddComponent<CollectibleItem>();
             exitAnim.isExit = true;
+
+            // Choose a reachable floor far from the entrance, avoiding coins and exit.
+            CellPosition keyPos = new CellPosition(1, 2);
+            int farthest = -1;
+            for (int x = 1; x < _generator.Width - 1; x++)
+                for (int y = 1; y < _generator.Height - 1; y++)
+                    if (_generator.Grid[x, y] == CellType.Floor && x + y > farthest)
+                    { farthest = x + y; keyPos = new CellPosition(x, y); }
+            GameObject key = new GameObject("Key");
+            key.transform.SetParent(_mazeRoot.transform);
+            key.transform.position = new Vector3(keyPos.x, keyPos.y, 0);
+            var keySr = key.AddComponent<SpriteRenderer>();
+            keySr.sprite = SpriteFactory.GetKeySprite();
+            keySr.sortingOrder = 3;
+            var keyCol = key.AddComponent<CircleCollider2D>();
+            keyCol.radius = 0.35f;
+            keyCol.isTrigger = true;
+            key.AddComponent<CollectibleItem>().isKey = true;
 
             // 4. Setup or reposition Player
             Vector3 startPos = new Vector3(_generator.StartPos.x, _generator.StartPos.y, 0);
@@ -327,60 +369,83 @@ namespace MazeGame
             _stylesInitialized = true;
         }
 
+        public void CollectKey()
+        {
+            if (CurrentState != GameState.Playing) return;
+            HasKey = true;
+            if (_exitRenderer != null) _exitRenderer.color = Color.white;
+            _notice = "钥匙已找到！前往绿色出口";
+            _noticeUntil = Time.unscaledTime + 3f;
+        }
+
+        public void TogglePause()
+        {
+            if (CurrentState == GameState.Playing) { CurrentState = GameState.Paused; Time.timeScale = 0f; }
+            else if (CurrentState == GameState.Paused) { CurrentState = GameState.Playing; Time.timeScale = 1f; }
+        }
+
+        public void ShowMainMenu() { CurrentState = GameState.MainMenu; Time.timeScale = 0f; }
+        private void OnDestroy() { if (Instance == this) { Instance = null; Time.timeScale = 1f; } }
+
         private void OnGUI()
         {
             InitStyles();
-
-            // HUD Card on Top-Left
-            GUILayout.BeginArea(new Rect(20, 20, 260, 160), _cardStyle);
-            GUILayout.Label("🎮 迷宫探险 (Maze Escape)", _headerStyle);
-            GUILayout.Space(6);
-            GUILayout.Label($"第 {currentLevel} 关 (Level {currentLevel})", _labelStyle);
-            GUILayout.Label($"💰 金币: {CoinsCollected} / {TotalCoins}", _labelStyle);
-            GUILayout.Label($"⏱ 用时: {ElapsedTime:F1}s", _labelStyle);
-            GUILayout.Space(4);
-            GUIStyle hintStyle = new GUIStyle(_labelStyle) { fontSize = 11, fontStyle = FontStyle.Italic };
-            hintStyle.normal.textColor = new Color(0.7f, 0.75f, 0.85f);
-            GUILayout.Label("操作: WASD / 方向键移动 | [R] 重置", hintStyle);
-            GUILayout.EndArea();
-
-            // Level Complete Modal
-            if (CurrentState == GameState.LevelCompleted)
+            float scale = Mathf.Min(Screen.width / 960f, Screen.height / 640f);
+            Matrix4x4 previous = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1));
+            float width = Screen.width / scale, height = Screen.height / scale;
+            if (CurrentState != GameState.MainMenu)
             {
-                // Dark background tint
-                GUI.color = new Color(0, 0, 0, 0.5f);
-                GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
-                GUI.color = Color.white;
-
-                float modalWidth = 360f;
-                float modalHeight = 260f;
-                float x = (Screen.width - modalWidth) * 0.5f;
-                float y = (Screen.height - modalHeight) * 0.5f;
-
-                GUILayout.BeginArea(new Rect(x, y, modalWidth, modalHeight), _cardStyle);
-                GUILayout.Space(10);
-                GUILayout.Label("🎉 恭喜通关！", _winTitleStyle);
-                GUILayout.Space(12);
-
-                GUIStyle winInfoStyle = new GUIStyle(_labelStyle) { alignment = TextAnchor.MiddleCenter, fontSize = 16 };
-                GUILayout.Label($"本关用时: {ElapsedTime:F1} 秒", winInfoStyle);
-                GUILayout.Label($"金币收集: {CoinsCollected} / {TotalCoins}", winInfoStyle);
-
-                GUILayout.Space(20);
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button("重玩本关", _btnStyle, GUILayout.Height(42)))
-                {
-                    StartLevel(currentLevel);
-                }
-                GUILayout.Space(12);
-                if (GUILayout.Button("下一关 ➔", _btnStyle, GUILayout.Height(42)))
-                {
-                    NextLevel();
-                }
-                GUILayout.EndHorizontal();
-
+                GUILayout.BeginArea(new Rect(20, 20, 320, 190), _cardStyle);
+                GUILayout.Label($"迷宫探险  /  第 {currentLevel} 关", _headerStyle);
+                GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
+                GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
+                GUILayout.Label("WASD / 方向键移动 · R 重新生成", _labelStyle);
+                if (GUILayout.Button("暂停 / 继续 · Esc", _btnStyle, GUILayout.Height(34))) TogglePause();
                 GUILayout.EndArea();
             }
+            if (Time.unscaledTime < _noticeUntil && CurrentState == GameState.Playing)
+                GUI.Box(new Rect((width - 420) / 2, height - 70, 420, 45), _notice, _cardStyle);
+            if (CurrentState != GameState.Playing)
+            {
+                GUI.color = new Color(0, 0, 0, 0.65f);
+                GUI.DrawTexture(new Rect(0, 0, width, height), Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                GUILayout.BeginArea(new Rect((width - 440) / 2, (height - 360) / 2, 440, 360), _cardStyle);
+                GUILayout.Space(16);
+                string title = CurrentState == GameState.MainMenu ? "迷宫探险" : CurrentState == GameState.Paused ? "休息一下" : "成功逃出迷宫";
+                GUILayout.Label(title, _winTitleStyle);
+                GUILayout.Space(20);
+                if (CurrentState == GameState.MainMenu)
+                {
+                    GUILayout.Label("探索岔路，收集金币。", _labelStyle);
+                    GUILayout.Label("找到金色钥匙，让出口重新亮起。", _labelStyle);
+                    GUILayout.Label("WASD / 方向键移动，Esc 暂停", _labelStyle);
+                    GUILayout.Space(20);
+                    if (GUILayout.Button("开始探险", _btnStyle, GUILayout.Height(48))) StartLevel(1);
+                }
+                else if (CurrentState == GameState.Paused)
+                {
+                    if (GUILayout.Button("继续探险", _btnStyle, GUILayout.Height(46))) TogglePause();
+                    GUILayout.Space(10);
+                    if (GUILayout.Button("重新生成本关", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
+                }
+                else
+                {
+                    GUILayout.Label($"用时 {ElapsedTime:F1} 秒    金币 {CoinsCollected} / {TotalCoins}", _labelStyle);
+                    GUILayout.Label(CoinsCollected == TotalCoins ? "全部金币已收集！" : "下次试着探索更多岔路", _labelStyle);
+                    GUILayout.Space(18);
+                    if (GUILayout.Button(currentLevel < 5 ? "进入下一关" : "完成五关 · 再次挑战", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel < 5 ? currentLevel + 1 : 1);
+                    if (GUILayout.Button("重玩本关", _btnStyle, GUILayout.Height(40))) StartLevel(currentLevel);
+                }
+                if (CurrentState != GameState.MainMenu)
+                {
+                    GUILayout.Space(10);
+                    if (GUILayout.Button("返回首页", _btnStyle, GUILayout.Height(40))) ShowMainMenu();
+                }
+                GUILayout.EndArea();
+            }
+            GUI.matrix = previous;
         }
     }
 }
