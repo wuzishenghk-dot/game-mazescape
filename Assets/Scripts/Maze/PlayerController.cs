@@ -12,6 +12,25 @@ namespace MazeGame
         [Header("Movement")]
         public float moveSpeed = 4.5f;
 
+        public float AttackCooldownRemaining { get; private set; }
+        private Vector2 _facing = Vector2.down;
+        public bool TryAttack()
+        {
+            var game=MazeGameManager.Instance;
+            if(game==null||game.CurrentState!=MazeGameManager.GameState.Playing||AttackCooldownRemaining>0)return false;
+            AttackCooldownRemaining=.45f;
+            CombatEffect.Spawn(transform.position+(Vector3)_facing*.25f,new Color(1,.9f,.5f),true,Mathf.Atan2(_facing.y,_facing.x)*Mathf.Rad2Deg,2f);
+            var visual=GetComponentInChildren<CharacterVisual>();if(visual!=null)visual.Attack();
+            int hits=0;
+            foreach(var enemy in FindObjectsByType<MazeEnemy>(FindObjectsSortMode.None))
+            {
+                Vector2 offset=enemy.transform.position-transform.position;
+                if(offset.magnitude<=1.35f && (offset.sqrMagnitude<.1f||Vector2.Dot(_facing,offset.normalized)>.15f) && game.HasClearPath(transform.position,enemy.transform.position))
+                {if(enemy.Hit())hits++;}
+            }
+            game.CombatNotice(hits>0?"命中！": "挥击 · 未命中");
+            return true;
+        }
         public float DashCooldownRemaining { get; private set; }
         private float _dashRemaining;
         private Vector2 _dashDirection;
@@ -27,6 +46,8 @@ namespace MazeGame
         public void ResetMovement()
         {
             _moveInput = Vector2.zero;
+            AttackCooldownRemaining=0;
+            _facing=Vector2.down;
             _dashRemaining = DashCooldownRemaining = 0;
             if (_rb != null) _rb.linearVelocity = Vector2.zero;
             transform.localScale = Vector3.one;
@@ -86,6 +107,13 @@ namespace MazeGame
                 _moveInput.Normalize();
             }
 
+            if(_moveInput.sqrMagnitude>.01f)_facing=_moveInput.normalized;
+            AttackCooldownRemaining=Mathf.Max(0,AttackCooldownRemaining-Time.deltaTime);
+#if ENABLE_INPUT_SYSTEM
+            if(Keyboard.current!=null&&Keyboard.current.jKey.wasPressedThisFrame)TryAttack();
+#else
+            if(Input.GetKeyDown(KeyCode.J))TryAttack();
+#endif
             DashCooldownRemaining = Mathf.Max(0, DashCooldownRemaining - Time.deltaTime);
             _dashRemaining = Mathf.Max(0, _dashRemaining - Time.deltaTime);
 #if ENABLE_INPUT_SYSTEM
@@ -113,7 +141,8 @@ namespace MazeGame
             if (item == null || !other.enabled) return;
             if (item.isExit) { game.ReachExit(); return; }
             other.enabled = false;
-            if (item.isKey) game.CollectKey();
+            if (item.itemKind >= 0) game.CollectItem(item.itemKind);
+            else if (item.isKey) game.CollectKey();
             else game.CollectCoin();
             Destroy(other.gameObject);
             if (SoundEffects.Instance != null) SoundEffects.Instance.PlayCoinSound();

@@ -4,6 +4,7 @@ namespace MazeGame
 {
     public class CollectibleItem : MonoBehaviour
     {
+        public int itemKind = -1;
         public bool isExit = false;
         public bool isKey = false;
         private Vector3 _startPos;
@@ -32,7 +33,7 @@ namespace MazeGame
                 transform.position = _startPos + new Vector3(0, bob, 0);
 
                 // Horizontal scale squeeze to simulate 3D coin spin
-                float coinSpin = Mathf.Abs(Mathf.Cos(t * 1.2f));
+                float coinSpin = itemKind >= 0 || isKey ? 1f : Mathf.Abs(Mathf.Cos(t * 1.2f));
                 transform.localScale = new Vector3(Mathf.Max(0.15f, coinSpin), 1f, 1f);
             }
         }

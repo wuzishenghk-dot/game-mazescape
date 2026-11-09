@@ -10,6 +10,8 @@ namespace MazeGame
         private SpriteRenderer _renderer;
         private int _character, _direction;
         private float _step;
+        private float _attackUntil;
+        public void Attack(){_attackUntil=Time.time+.22f;}
         public static Sprite GetSprite(int character, int direction)
         {
             character = Mathf.Clamp(character, 0, 3); direction = Mathf.Clamp(direction, 0, 3);
@@ -46,6 +48,7 @@ namespace MazeGame
             float bob = movement.sqrMagnitude > 0.01f ? Mathf.Abs(Mathf.Sin(_step)) * 0.045f : 0;
             transform.localPosition = new Vector3(0, bob, 0);
             transform.localRotation = Quaternion.Euler(0, 0, movement.sqrMagnitude > 0.01f ? Mathf.Sin(_step) * 3f : 0);
+            if(Time.time<_attackUntil)transform.localRotation=Quaternion.Euler(0,0,Mathf.Sin((_attackUntil-Time.time)/.22f*Mathf.PI)*-22f);
             _renderer.sprite = GetSprite(_character, _direction);
         }
 

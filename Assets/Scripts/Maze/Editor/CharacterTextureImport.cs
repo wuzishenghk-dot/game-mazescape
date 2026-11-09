@@ -7,7 +7,7 @@ namespace MazeGame.Editor
     {
         private void OnPreprocessTexture()
         {
-            if (assetPath != "Assets/Resources/Characters/Adventurers.png") return;
+            if (assetPath != "Assets/Resources/Characters/Adventurers.png" && assetPath != "Assets/Resources/Monsters/Monsters.png") return;
             var importer = (TextureImporter)assetImporter;
             importer.textureType = TextureImporterType.Default;
             importer.isReadable = true;

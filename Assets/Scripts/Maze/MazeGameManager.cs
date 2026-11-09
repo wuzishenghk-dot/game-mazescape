@@ -63,6 +63,7 @@ namespace MazeGame
         {
             if (CurrentState != GameState.Playing || IsInvulnerable) return false;
             Health--;
+            if(_player!=null)CombatEffect.Spawn(_player.transform.position,Color.red,false,0,1.2f);
             _invulnerableUntil = Time.time + 1.5f;
             _notice = "受伤了！利用冲刺拉开距离";
             _noticeUntil = Time.unscaledTime + 2f;
@@ -75,6 +76,84 @@ namespace MazeGame
             SelectedCharacter = Mathf.Clamp(index, 0, 3);
             PlayerPrefs.SetInt("Maze.Character", SelectedCharacter);
             if (_player != null) _player.GetComponentInChildren<CharacterVisual>().Select(SelectedCharacter);
+        }
+        public int DefeatedEnemies { get; private set; }
+        public void EnemyDefeated(){DefeatedEnemies++;Notify("怪物已击败！");}
+        public void CombatNotice(string text){if(_noticeUntil<Time.unscaledTime || (text.StartsWith("命中")&&_notice!="怪物已击败！"))Notify(text);}
+        public bool HasClearPath(Vector3 from,Vector3 to)
+        {
+            int steps=Mathf.CeilToInt(Vector3.Distance(from,to)*12);
+            for(int i=0;i<=steps;i++){var p=Vector3.Lerp(from,to,steps==0?0:(float)i/steps);int x=Mathf.RoundToInt(p.x),y=Mathf.RoundToInt(p.y);if(x<0||y<0||x>=_generator.Width||y>=_generator.Height||_generator.Grid[x,y]==CellType.Wall)return false;}
+            return true;
+        }
+        public int[] Inventory { get; } = new int[3];
+        private Vector2Int _keyCell;
+        private GameObject _route;
+        public void CollectItem(int kind)
+        {
+            if(CurrentState != GameState.Playing || kind<0 || kind>2)return;
+            Inventory[kind]++; Notify("获得"+ItemArt.Names[kind]+" · 按 "+(kind+1)+" 使用");
+        }
+        private void Notify(string message){_notice=message;_noticeUntil=Time.unscaledTime+3;}
+        public bool UseItem(int kind)
+        {
+            if(CurrentState!=GameState.Playing || kind<0 || kind>2 || Inventory[kind]<=0){if(CurrentState==GameState.Playing&&kind>=0&&kind<3)Notify(ItemArt.Names[kind]+"数量不足");return false;}
+            if(kind==0)
+            {
+                if(Health>=3){Notify("生命已满，药水已保留");return false;}
+                Health++; CombatEffect.Spawn(_player.transform.position,Color.green,false,0,1.8f); Notify("药水已使用 · 恢复 1 点生命");
+            }
+            else if(kind==1)
+            {
+                int frozen=0;
+                foreach(var enemy in FindObjectsByType<MazeEnemy>(FindObjectsSortMode.None))
+                    if(Vector2.Distance(enemy.transform.position,_player.transform.position)<=5f){enemy.Freeze(3);frozen++;}
+                if(frozen==0){Notify("附近没有怪物，符石已保留");return false;}
+                CombatEffect.Spawn(_player.transform.position,Color.cyan,false,0,5f);
+                Notify("符石已使用 · 附近怪物冻结 3 秒");
+            }
+            else
+            {
+                if(!ShowRoute()){Notify("当前没有可显示的路线");return false;}
+                CombatEffect.Spawn(_player.transform.position,new Color(1,.85f,.3f),false,0,2);
+                Notify("卷轴已使用 · 引导路线持续 8 秒");
+            }
+            Inventory[kind]--;return true;
+        }
+        private bool ShowRoute()
+        {
+            var start=new Vector2Int(Mathf.RoundToInt(_player.transform.position.x),Mathf.RoundToInt(_player.transform.position.y));
+            var goal=HasKey?new Vector2Int(_generator.ExitPos.x,_generator.ExitPos.y):_keyCell;
+            var queue=new Queue<Vector2Int>();var parents=new Dictionary<Vector2Int,Vector2Int>();
+            queue.Enqueue(start);parents[start]=start;
+            var directions=new[]{Vector2Int.up,Vector2Int.down,Vector2Int.left,Vector2Int.right};
+            while(queue.Count>0)
+            {
+                var cell=queue.Dequeue();if(cell==goal)break;
+                foreach(var d in directions){var n=cell+d;if(n.x<0||n.y<0||n.x>=_generator.Width||n.y>=_generator.Height||_generator.Grid[n.x,n.y]==CellType.Wall||parents.ContainsKey(n))continue;parents[n]=cell;queue.Enqueue(n);}
+            }
+            if(!parents.ContainsKey(goal))return false;
+            if(_route!=null){_route.SetActive(false);Destroy(_route);}
+            _route=new GameObject("GuideRoute");_route.transform.SetParent(_mazeRoot.transform);_route.AddComponent<TimedRoute>();
+            for(var cell=goal;cell!=start;cell=parents[cell])
+            {
+                var dot=new GameObject("RouteDot");dot.transform.SetParent(_route.transform);dot.transform.position=new Vector3(cell.x,cell.y,0);dot.transform.localScale=Vector3.one*.18f;
+                var sr=dot.AddComponent<SpriteRenderer>();sr.sprite=ItemArt.Get(1);sr.sortingOrder=21;sr.color=new Color(.4f,1f,1f,.85f);
+            }
+            return true;
+        }
+        private void SpawnSupplies()
+        {
+            var cells=new List<Vector2Int>();
+            for(int x=1;x<_generator.Width-1;x++)for(int y=1;y<_generator.Height-1;y++)
+                if(_generator.Grid[x,y]==CellType.Floor && (x!=_keyCell.x||y!=_keyCell.y))cells.Add(new Vector2Int(x,y));
+            for(int i=0;i<6&&cells.Count>0;i++)
+            {
+                int index=Random.Range(0,cells.Count);var cell=cells[index];cells.RemoveAt(index);int kind=i%3;
+                var item=new GameObject(ItemArt.Names[kind]);item.transform.SetParent(_mazeRoot.transform);item.transform.position=new Vector3(cell.x,cell.y,0);
+                var sr=item.AddComponent<SpriteRenderer>();sr.sprite=ItemArt.Get(kind);sr.sortingOrder=3;
+                var col=item.AddComponent<CircleCollider2D>();col.radius=.3f;col.isTrigger=true;item.AddComponent<CollectibleItem>().itemKind=kind;
+            }
         }
         public bool HasKey { get; private set; }
         private SpriteRenderer _exitRenderer;
@@ -138,6 +217,11 @@ namespace MazeGame
 #endif
 
             if (pausePressed) TogglePause();
+#if ENABLE_INPUT_SYSTEM
+            if(Keyboard.current!=null){if(Keyboard.current.digit1Key.wasPressedThisFrame)UseItem(0);if(Keyboard.current.digit2Key.wasPressedThisFrame)UseItem(1);if(Keyboard.current.digit3Key.wasPressedThisFrame)UseItem(2);}
+#else
+            if(Input.GetKeyDown(KeyCode.Alpha1))UseItem(0);if(Input.GetKeyDown(KeyCode.Alpha2))UseItem(1);if(Input.GetKeyDown(KeyCode.Alpha3))UseItem(2);
+#endif
             if (restartPressed && CurrentState == GameState.Playing)
             {
                 StartLevel(currentLevel);
@@ -149,6 +233,8 @@ namespace MazeGame
             Time.timeScale = 1f;
             HasKey = false;
             Health = 3;
+            DefeatedEnemies=0;
+            System.Array.Clear(Inventory,0,Inventory.Length);
             _invulnerableUntil = 0;
             _notice = "";
             _noticeUntil = 0;
@@ -299,6 +385,7 @@ namespace MazeGame
                 for (int y = 1; y < _generator.Height - 1; y++)
                     if (_generator.Grid[x, y] == CellType.Floor && x + y > farthest)
                     { farthest = x + y; keyPos = new CellPosition(x, y); }
+            _keyCell = new Vector2Int(keyPos.x,keyPos.y);
             GameObject key = new GameObject("Key");
             key.transform.SetParent(_mazeRoot.transform);
             key.transform.position = new Vector3(keyPos.x, keyPos.y, 0);
@@ -352,15 +439,18 @@ namespace MazeGame
                 for (int x = 1; x < _generator.Width - 1; x++)
                     for (int y = 1; y < _generator.Height - 1; y++)
                         if (_generator.Grid[x, y] == CellType.Floor && x + y >= 12 && (x != keyPos.x || y != keyPos.y)) candidates.Add(new Vector2Int(x, y));
-                for (int i = 0; i < currentLevel - 2 && candidates.Count > 0; i++)
+                for (int i = 0; i < (currentLevel == 3 ? 2 : currentLevel - 2) && candidates.Count > 0; i++)
                 {
                     int index = Random.Range(0, candidates.Count);
                     var cell = candidates[index]; candidates.RemoveAt(index);
                     var enemy = new GameObject("Patrol_" + i);
                     enemy.transform.SetParent(_mazeRoot.transform);
-                    enemy.AddComponent<MazeEnemy>().Initialize(_generator, _player.transform, cell);
+                    int[][] kinds={new int[0],new int[0],new[]{0,1},new[]{2,3},new[]{4,5,1}};
+                    enemy.AddComponent<MazeEnemy>().Initialize(_generator, _player.transform, cell, kinds[currentLevel-1][i%kinds[currentLevel-1].Length]);
                 }
             }
+
+            SpawnSupplies();
 
             // 5. Setup Camera Follow
             Camera mainCam = Camera.main;
@@ -458,14 +548,21 @@ namespace MazeGame
                 GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
                 GUILayout.Label($"生命  {Health} / 3" + (currentLevel >= 3 ? "    小心巡逻怪" : "    安全探索"), _labelStyle);
                 GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
-                GUILayout.Label("WASD / 方向键移动 · R 重新生成", _labelStyle);
+                GUILayout.Label("WASD 移动 · J 攻击 · R 重新生成", _labelStyle);
                 var controller = _player != null ? _player.GetComponent<PlayerController>() : null;
                 GUILayout.Label(controller != null && controller.DashCooldownRemaining > 0 ? $"冲刺冷却  {controller.DashCooldownRemaining:F1} 秒" : "空格冲刺 · 已就绪", _labelStyle);
                 if (GUILayout.Button("暂停 / 继续 · Esc", _btnStyle, GUILayout.Height(34))) TogglePause();
                 GUILayout.EndArea();
             }
+            if(CurrentState == GameState.Playing)
+            {
+                GUILayout.BeginArea(new Rect((width-570)/2,height-68,570,54),_cardStyle);
+                GUILayout.BeginHorizontal();
+                for(int i=0;i<3;i++)if(GUILayout.Button($"[{i+1}] {ItemArt.Names[i]} ×{Inventory[i]}",GUILayout.Height(30)))UseItem(i);
+                GUILayout.EndHorizontal();GUILayout.EndArea();
+            }
             if (Time.unscaledTime < _noticeUntil && CurrentState == GameState.Playing)
-                GUI.Box(new Rect((width - 420) / 2, height - 70, 420, 45), _notice, _cardStyle);
+                GUI.Box(new Rect((width - 420) / 2, height - 125, 420, 45), _notice, _cardStyle);
             if (CurrentState != GameState.Playing)
             {
                 GUI.color = new Color(0, 0, 0, 0.65f);
@@ -503,7 +600,7 @@ namespace MazeGame
                     GUILayout.EndHorizontal();
                     GUILayout.Space(12);
                     GUILayout.Label("找到金色钥匙，让出口重新亮起。", _labelStyle);
-                    GUILayout.Label("WASD 移动 · 空格冲刺 · Esc 暂停", _labelStyle);
+                    GUILayout.Label("WASD 移动 · J 攻击 · 空格冲刺 · 1/2/3 道具", _labelStyle);
                     GUILayout.Space(20);
                     if (GUILayout.Button("开始探险", _btnStyle, GUILayout.Height(48))) StartLevel(1);
                 }
@@ -515,7 +612,7 @@ namespace MazeGame
                 }
                 else if (CurrentState == GameState.Failed)
                 {
-                    GUILayout.Label("注意红色巡逻怪，冲刺可以帮助脱险。", _labelStyle);
+                    GUILayout.Label("小心地牢怪物，冰冻符石可以帮助脱险。", _labelStyle);
                     GUILayout.Label("受伤后有 1.5 秒保护时间。", _labelStyle);
                     GUILayout.Space(20);
                     if (GUILayout.Button("重新挑战", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
