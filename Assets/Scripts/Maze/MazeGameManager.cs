@@ -9,7 +9,7 @@ using UnityEditor;
 
 namespace MazeGame
 {
-    public class MazeGameManager : MonoBehaviour
+    public partial class MazeGameManager : MonoBehaviour
     {
         public static MazeGameManager Instance { get; private set; }
 
@@ -43,6 +43,8 @@ namespace MazeGame
             Paused,
             Playing,
             Failed,
+            UpgradeChoice,
+            Shop,
             LevelCompleted
         }
 
@@ -100,17 +102,17 @@ namespace MazeGame
             if(CurrentState!=GameState.Playing || kind<0 || kind>2 || Inventory[kind]<=0){if(CurrentState==GameState.Playing&&kind>=0&&kind<3)Notify(ItemArt.Names[kind]+"数量不足");return false;}
             if(kind==0)
             {
-                if(Health>=3){Notify("生命已满，药水已保留");return false;}
-                Health++; CombatEffect.Spawn(_player.transform.position,Color.green,false,0,1.8f); Notify("药水已使用 · 恢复 1 点生命");
+                if(Health>=MaxHealth){Notify("生命已满，药水已保留");return false;}
+                Health=Mathf.Min(MaxHealth,Health+PotionHealing); CombatEffect.Spawn(_player.transform.position,Color.green,false,0,1.8f); Notify("药水已使用 · 恢复生命");
             }
             else if(kind==1)
             {
                 int frozen=0;
                 foreach(var enemy in FindObjectsByType<MazeEnemy>(FindObjectsSortMode.None))
-                    if(Vector2.Distance(enemy.transform.position,_player.transform.position)<=5f){enemy.Freeze(3);frozen++;}
+                    if(Vector2.Distance(enemy.transform.position,_player.transform.position)<=5f){enemy.Freeze(FreezeDuration);frozen++;}
                 if(frozen==0){Notify("附近没有怪物，符石已保留");return false;}
                 CombatEffect.Spawn(_player.transform.position,Color.cyan,false,0,5f);
-                Notify("符石已使用 · 附近怪物冻结 3 秒");
+                Notify($"符石已使用 · 附近怪物冻结 {FreezeDuration} 秒");
             }
             else
             {
@@ -146,7 +148,7 @@ namespace MazeGame
         {
             var cells=new List<Vector2Int>();
             for(int x=1;x<_generator.Width-1;x++)for(int y=1;y<_generator.Height-1;y++)
-                if(_generator.Grid[x,y]==CellType.Floor && (x!=_keyCell.x||y!=_keyCell.y))cells.Add(new Vector2Int(x,y));
+                if(_generator.Grid[x,y]==CellType.Floor && new Vector2Int(x,y)!=_generator.ChallengeCenter && (x!=_keyCell.x||y!=_keyCell.y))cells.Add(new Vector2Int(x,y));
             for(int i=0;i<6&&cells.Count>0;i++)
             {
                 int index=Random.Range(0,cells.Count);var cell=cells[index];cells.RemoveAt(index);int kind=i%3;
@@ -232,9 +234,8 @@ namespace MazeGame
         {
             Time.timeScale = 1f;
             HasKey = false;
-            Health = 3;
+            EnterLevelProgress(Mathf.Clamp(level,1,5));
             DefeatedEnemies=0;
-            System.Array.Clear(Inventory,0,Inventory.Length);
             _invulnerableUntil = 0;
             _notice = "";
             _noticeUntil = 0;
@@ -252,12 +253,12 @@ namespace MazeGame
 
         public void NextLevel()
         {
-            StartLevel(currentLevel + 1);
+            OpenUpgradeChoice();
         }
 
         public void CollectCoin()
         {
-            if (CurrentState == GameState.Playing) CoinsCollected++;
+            if (CurrentState == GameState.Playing) { CoinsCollected++; Wallet++; }
         }
 
         public void ReachExit()
@@ -270,6 +271,8 @@ namespace MazeGame
                     _noticeUntil = Time.unscaledTime + 3f;
                     return;
                 }
+                Wallet+=2;
+                if(currentLevel<5)RollUpgrades();
                 CurrentState = GameState.LevelCompleted;
                 Time.timeScale = 0f;
                 if (SoundEffects.Instance != null)
@@ -383,7 +386,7 @@ namespace MazeGame
             int farthest = -1;
             for (int x = 1; x < _generator.Width - 1; x++)
                 for (int y = 1; y < _generator.Height - 1; y++)
-                    if (_generator.Grid[x, y] == CellType.Floor && x + y > farthest)
+                    if (_generator.Grid[x, y] == CellType.Floor && new Vector2Int(x,y)!=_generator.ChallengeCenter && x + y > farthest)
                     { farthest = x + y; keyPos = new CellPosition(x, y); }
             _keyCell = new Vector2Int(keyPos.x,keyPos.y);
             GameObject key = new GameObject("Key");
@@ -450,6 +453,7 @@ namespace MazeGame
                 }
             }
 
+            var chest=new GameObject("TreasureChallenge");chest.transform.SetParent(_mazeRoot.transform);chest.AddComponent<TreasureChallenge>().Initialize(_generator,_player.transform);
             SpawnSupplies();
 
             // 5. Setup Camera Follow
@@ -541,14 +545,15 @@ namespace MazeGame
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1));
             float width = Screen.width / scale, height = Screen.height / scale;
+            if(CurrentState==GameState.UpgradeChoice||CurrentState==GameState.Shop){DrawProgression(width,height);GUI.matrix=previous;return;}
             if (CurrentState != GameState.MainMenu)
             {
                 GUILayout.BeginArea(new Rect(20, 20, 350, 250), _cardStyle);
                 GUILayout.Label($"第 {currentLevel} 关 · {DungeonArt.Names[currentLevel - 1]}", _headerStyle);
-                GUILayout.Label($"金币  {CoinsCollected} / {TotalCoins}     用时  {ElapsedTime:F1} 秒", _labelStyle);
-                GUILayout.Label($"生命  {Health} / 3" + (currentLevel >= 3 ? "    小心巡逻怪" : "    安全探索"), _labelStyle);
+                GUILayout.Label($"金币 {CoinsCollected}/{TotalCoins} · 钱包 {Wallet} · {ElapsedTime:F0} 秒", _labelStyle);
+                GUILayout.Label($"生命  {Health} / {MaxHealth}" + (currentLevel >= 3 ? "    小心巡逻怪" : "    安全探索"), _labelStyle);
                 GUILayout.Label(HasKey ? "目标：前往绿色出口" : "目标：找到金色钥匙，开启出口", _labelStyle);
-                GUILayout.Label("WASD 移动 · J 攻击 · R 重新生成", _labelStyle);
+                GUILayout.Label("WASD 移动 · J 攻击 · R 重试本关", _labelStyle);
                 var controller = _player != null ? _player.GetComponent<PlayerController>() : null;
                 GUILayout.Label(controller != null && controller.DashCooldownRemaining > 0 ? $"冲刺冷却  {controller.DashCooldownRemaining:F1} 秒" : "空格冲刺 · 已就绪", _labelStyle);
                 if (GUILayout.Button("暂停 / 继续 · Esc", _btnStyle, GUILayout.Height(34))) TogglePause();
@@ -602,13 +607,13 @@ namespace MazeGame
                     GUILayout.Label("找到金色钥匙，让出口重新亮起。", _labelStyle);
                     GUILayout.Label("WASD 移动 · J 攻击 · 空格冲刺 · 1/2/3 道具", _labelStyle);
                     GUILayout.Space(20);
-                    if (GUILayout.Button("开始探险", _btnStyle, GUILayout.Height(48))) StartLevel(1);
+                    if (GUILayout.Button("开始新的冒险", _btnStyle, GUILayout.Height(48))) StartRun();
                 }
                 else if (CurrentState == GameState.Paused)
                 {
                     if (GUILayout.Button("继续探险", _btnStyle, GUILayout.Height(46))) TogglePause();
                     GUILayout.Space(10);
-                    if (GUILayout.Button("重新生成本关", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
+                    if (GUILayout.Button("重试本关（恢复入关资源）", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel);
                 }
                 else if (CurrentState == GameState.Failed)
                 {
@@ -622,8 +627,8 @@ namespace MazeGame
                     GUILayout.Label($"用时 {ElapsedTime:F1} 秒    金币 {CoinsCollected} / {TotalCoins}", _labelStyle);
                     GUILayout.Label(CoinsCollected == TotalCoins ? "全部金币已收集！" : "下次试着探索更多岔路", _labelStyle);
                     GUILayout.Space(18);
-                    if (GUILayout.Button(currentLevel < 5 ? "进入下一关" : "完成五关 · 再次挑战", _btnStyle, GUILayout.Height(46))) StartLevel(currentLevel < 5 ? currentLevel + 1 : 1);
-                    if (GUILayout.Button("重玩本关", _btnStyle, GUILayout.Height(40))) StartLevel(currentLevel);
+                    if (GUILayout.Button(currentLevel < 5 ? "选择升级 · 前往补给站" : "完成五关 · 开始新的冒险", _btnStyle, GUILayout.Height(46))) { if(currentLevel<5)OpenUpgradeChoice();else StartRun(); }
+                    if (GUILayout.Button("重试本关（恢复入关资源）", _btnStyle, GUILayout.Height(40))) StartLevel(currentLevel);
                 }
                 if (CurrentState != GameState.MainMenu)
                 {

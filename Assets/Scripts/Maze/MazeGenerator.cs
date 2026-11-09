@@ -8,6 +8,7 @@ namespace MazeGame
         public int Width { get; private set; }
         public int Height { get; private set; }
         public CellType[,] Grid { get; private set; }
+        public Vector2Int ChallengeCenter { get; private set; }
         public CellPosition StartPos { get; private set; }
         public CellPosition ExitPos { get; private set; }
         public List<CellPosition> CoinPositions { get; private set; }
@@ -91,6 +92,23 @@ namespace MazeGame
                 }
             }
 
+            // Small connected chambers and shortcuts keep exploration from becoming all backtracking.
+            ChallengeCenter = new Vector2Int(Width - 4, 3);
+            var rooms = new[] { ChallengeCenter, new Vector2Int(3, Height - 4) };
+            foreach(var room in rooms)
+                for(int x=room.x-1;x<=room.x+1;x++)for(int y=room.y-1;y<=room.y+1;y++)Grid[x,y]=CellType.Floor;
+            int openings=0;
+            for(int attempt=0;attempt<Width*Height && openings<3;attempt++)
+            {
+                int x=Random.Range(2,Width-2),y=Random.Range(2,Height-2);
+                if(Grid[x,y]!=CellType.Wall)continue;
+                bool horizontal=Grid[x-1,y]!=CellType.Wall&&Grid[x+1,y]!=CellType.Wall;
+                bool vertical=Grid[x,y-1]!=CellType.Wall&&Grid[x,y+1]!=CellType.Wall;
+                if(horizontal||vertical){Grid[x,y]=CellType.Floor;openings++;}
+            }
+            deadEnds.Clear();
+            for(int x=1;x<Width-1;x++)for(int y=1;y<Height-1;y++)
+                if(Grid[x,y]!=CellType.Wall&&CountFloorNeighbors(x,y)==1&&!(x==1&&y==1)&&!(x==ExitPos.x&&y==ExitPos.y)&&!(x==ChallengeCenter.x&&y==ChallengeCenter.y))deadEnds.Add(new CellPosition(x,y));
             // Ensure exit is Floor
             Grid[ExitPos.x, ExitPos.y] = CellType.Exit;
             Grid[StartPos.x, StartPos.y] = CellType.Start;
@@ -99,6 +117,13 @@ namespace MazeGame
             CoinPositions.Clear();
             int coinCount = Mathf.Clamp(deadEnds.Count, 3, 10);
             
+            if(deadEnds.Count<6)
+                for(int x=1;x<Width-1&&deadEnds.Count<6;x++)for(int y=1;y<Height-1&&deadEnds.Count<6;y++)
+                {
+                    var cell=new CellPosition(x,y);
+                    if(Grid[x,y]==CellType.Floor && !(x==1&&y==1) && !(x==ExitPos.x&&y==ExitPos.y) && !(x==ChallengeCenter.x&&y==ChallengeCenter.y) && !deadEnds.Contains(cell))deadEnds.Add(cell);
+                }
+            coinCount=Mathf.Min(10,deadEnds.Count);
             // Shuffle dead ends
             for (int i = 0; i < deadEnds.Count; i++)
             {

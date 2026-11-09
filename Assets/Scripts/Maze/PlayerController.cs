@@ -19,14 +19,14 @@ namespace MazeGame
             var game=MazeGameManager.Instance;
             if(game==null||game.CurrentState!=MazeGameManager.GameState.Playing||AttackCooldownRemaining>0)return false;
             AttackCooldownRemaining=.45f;
-            CombatEffect.Spawn(transform.position+(Vector3)_facing*.25f,new Color(1,.9f,.5f),true,Mathf.Atan2(_facing.y,_facing.x)*Mathf.Rad2Deg,2f);
+            CombatEffect.Spawn(transform.position+(Vector3)_facing*.25f,new Color(1,.9f,.5f),true,Mathf.Atan2(_facing.y,_facing.x)*Mathf.Rad2Deg,game.AttackReach*1.48f);
             var visual=GetComponentInChildren<CharacterVisual>();if(visual!=null)visual.Attack();
             int hits=0;
             foreach(var enemy in FindObjectsByType<MazeEnemy>(FindObjectsSortMode.None))
             {
                 Vector2 offset=enemy.transform.position-transform.position;
-                if(offset.magnitude<=1.35f && (offset.sqrMagnitude<.1f||Vector2.Dot(_facing,offset.normalized)>.15f) && game.HasClearPath(transform.position,enemy.transform.position))
-                {if(enemy.Hit())hits++;}
+                if(offset.magnitude<=game.AttackReach && (offset.sqrMagnitude<.1f||Vector2.Dot(_facing,offset.normalized)>.15f) && game.HasClearPath(transform.position,enemy.transform.position))
+                {if(enemy.Hit(game.AttackDamage))hits++;}
             }
             game.CombatNotice(hits>0?"命中！": "挥击 · 未命中");
             return true;
@@ -40,7 +40,7 @@ namespace MazeGame
             if (MazeGameManager.Instance == null || MazeGameManager.Instance.CurrentState != MazeGameManager.GameState.Playing || DashCooldownRemaining > 0 || direction.sqrMagnitude < 0.01f) return false;
             _dashDirection = direction.normalized;
             _dashRemaining = 0.18f;
-            DashCooldownRemaining = 2.5f;
+            DashCooldownRemaining = MazeGameManager.Instance.DashCooldown;
             return true;
         }
         public void ResetMovement()

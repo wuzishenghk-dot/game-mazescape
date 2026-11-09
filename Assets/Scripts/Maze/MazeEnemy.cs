@@ -20,11 +20,11 @@ namespace MazeGame
             _healthFill.localPosition=new Vector3(-.35f+.35f*fraction,0,0);
             _healthFill.GetComponent<SpriteRenderer>().color=IsFrozen?Color.cyan:new Color(1,.3f,.2f);
         }
-        public bool Hit()
+        public bool Hit(int damage = 1)
         {
             var game=MazeGameManager.Instance;
             if(game==null||game.CurrentState!=MazeGameManager.GameState.Playing||Health<=0)return false;
-            Health--;_hitUntil=Time.time+.25f;
+            Health=Mathf.Max(0,Health-Mathf.Max(1,damage));_hitUntil=Time.time+.25f;
             CombatEffect.Spawn(transform.position,Health<=0?new Color(1,.6f,.2f):Color.white,false,0,Health<=0?1.5f:.8f);
             if(Health<=0){game.EnemyDefeated();gameObject.SetActive(false);Destroy(gameObject);}
             return true;
